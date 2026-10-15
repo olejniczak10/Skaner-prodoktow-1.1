@@ -13,13 +13,13 @@
 <section class="panel"><h2>01 / Dodaj produkt</h2>
 <label class="label" for="barcode">Kod kreskowy (EAN/UPC)</label><input id="barcode" type="text" inputmode="numeric" placeholder="np. 5901234123457" autocomplete="off">
 <div class="buttons"><button class="primary" id="lookup">Znajdź produkt</button><button class="secondary" id="startScan">Skanuj aparatem</button></div>
-<div id="reader" class="reader"></div><div id="status" class="status" role="status">Wpisz kod ręcznie albo uruchom aparat. Do skanowania zezwól przeglądarce na dostęp do kamery.</div>
+<div id="reader" class="reader"></div><div id="status" class="status" role="status">Wpisz kod ręcznie albo uruchom aparat. Do skanowania zezwól przeglądarce na dostęp do kamery.</div><div class="buttons" id="webSearchWrap" style="display:none"><button class="secondary" id="googleSearch">Szukaj kodu w Google</button></div>
 <hr class="sectionline"><h2>Jeśli produktu nie znaleziono</h2>
 <label class="label" for="manualName">Nazwa produktu</label><input id="manualName" type="text" placeholder="np. Sok pomarańczowy 1 l">
 <label class="label" for="manualBrand">Marka</label><input id="manualBrand" type="text" placeholder="np. Marka">
 <label class="label" for="manualQty">Ilość</label><input id="manualQty" type="number" min="1" step="1" value="1">
 <div class="buttons"><button class="secondary" id="addManual">Dodaj ręcznie</button></div>
-<p class="hint">Dane z wyszukiwarki pochodzą z Open Food Facts. Baza obejmuje głównie żywność i nie zawiera wszystkich produktów.</p>
+<p class="hint">Aplikacja sprawdza kilka źródeł (żywność, inne produkty i książki). Jeśli nie znajdzie kodu, możesz otworzyć wyszukiwanie Google. Google nie udostępnia zwykłych wyników wyszukiwania bezpośrednio stronie bez dodatkowego API.</p>
 </section>
 <section class="panel"><div class="actions"><h2>02 / Twoja lista</h2><span class="pill" id="savedPill">Zapis lokalny</span></div>
 <div class="stats"><div class="stat"><b id="countProducts">0</b><span>pozycji</span></div><div class="stat"><b id="countUnits">0</b><span>sztuk łącznie</span></div></div>
@@ -42,8 +42,31 @@ function setStatus(msg,type=''){const s=$('status');s.textContent=msg;s.classNam
 function clean(v){return String(v??'').replace(/[\r\n]+/g,' ').trim()}
 function render(){const body=$('rows');body.innerHTML='';$('empty').style.display=items.length?'none':'block';let units=0;items.forEach((p,i)=>{units+=Number(p.quantity)||0;const tr=document.createElement('tr');const td1=document.createElement('td');const prod=document.createElement('div');prod.className='prod';if(p.image){const im=document.createElement('img');im.className='thumb';im.src=p.image;im.alt='';im.onerror=()=>im.remove();prod.appendChild(im)}const details=document.createElement('div');const name=document.createElement('div');name.textContent=p.name||'Nieznany produkt';const brand=document.createElement('div');brand.className='tiny';brand.textContent=p.brand||'';details.append(name,brand);prod.append(details);td1.append(prod);const td2=document.createElement('td');td2.textContent=p.barcode;const td3=document.createElement('td');td3.textContent=p.category||'—';const td4=document.createElement('td');const q=document.createElement('input');q.type='number';q.min='1';q.step='1';q.value=p.quantity;q.style.width='70px';q.style.padding='7px';q.addEventListener('change',()=>{items[i].quantity=Math.max(1,parseInt(q.value)||1);persist()});td4.append(q);const td5=document.createElement('td');const del=document.createElement('button');del.className='danger';del.textContent='Usuń';del.style.padding='7px 9px';del.addEventListener('click',()=>{items.splice(i,1);persist()});td5.append(del);tr.append(td1,td2,td3,td4,td5);body.append(tr)});$('countProducts').textContent=items.length;$('countUnits').textContent=units}
 function addProduct(p){const code=clean(p.barcode);if(!code){setStatus('Brakuje kodu kreskowego.','error');return}const existing=items.find(x=>x.barcode===code);if(existing){existing.quantity=(Number(existing.quantity)||1)+(Number(p.quantity)||1);setStatus('Produkt był już na liście — zwiększono ilość.','good')}else{items.unshift({...p,barcode:code,quantity:Math.max(1,Number(p.quantity)||1),addedAt:new Date().toISOString()});setStatus('Dodano produkt do listy.','good')}persist();$('barcode').value='';$('manualName').value='';$('manualBrand').value='';$('manualQty').value='1'}
-async function lookup(){if(busy)return;const code=clean($('barcode').value).replace(/\s/g,'');if(!/^\d{8,14}$/.test(code)){setStatus('Wpisz poprawny kod kreskowy (8–14 cyfr).','error');return}busy=true;$('lookup').disabled=true;setStatus('Szukam produktu w bazie Open Food Facts…');try{const res=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json');if(!res.ok)throw Error('Baza produktów jest chwilowo niedostępna.');const data=await res.json();if(data.status!==1||!data.product){setStatus('Nie znaleziono produktu. Uzupełnij nazwę poniżej i dodaj ręcznie.','error');return}const p=data.product;addProduct({barcode:code,name:p.product_name_pl||p.product_name||p.abbreviated_product_name||'Produkt bez nazwy',brand:p.brands||'',category:(p.categories_tags||[]).slice(-1)[0]?.replace(/^[a-z]{2}:/,'').replace(/-/g,' ')||p.categories||'',quantity:1,image:p.image_front_small_url||p.image_url||'',source:'Open Food Facts'});}catch(e){setStatus('Nie udało się pobrać danych. Sprawdź internet i spróbuj ponownie. Możesz też dodać produkt ręcznie.','error')}finally{busy=false;$('lookup').disabled=false}}
-$('lookup').addEventListener('click',lookup);$('barcode').addEventListener('keydown',e=>{if(e.key==='Enter')lookup()});$('addManual').addEventListener('click',()=>{const name=clean($('manualName').value);const code=clean($('barcode').value).replace(/\s/g,'');if(!name){setStatus('Wpisz nazwę produktu.','error');return}addProduct({barcode:code,name,brand:clean($('manualBrand').value),category:'Dodano ręcznie',quantity:Math.max(1,parseInt($('manualQty').value)||1),source:'manual'})});
+function showGoogleSearch(code){
+  const wrap=$('webSearchWrap');wrap.style.display='flex';
+  $('googleSearch').onclick=()=>window.open('https://www.google.com/search?q='+encodeURIComponent('"'+code+'" product'),'_blank','noopener');
+}
+function hideGoogleSearch(){$('webSearchWrap').style.display='none'}
+function productFromApi(product,code,source){
+  return {barcode:code,name:product.product_name_pl||product.product_name||product.product_name_en||product.title||product.abbreviated_product_name||product.name||'Produkt bez nazwy',brand:product.brands||product.brand||product.authors||'',category:(product.categories_tags||[]).slice(-1)[0]?.replace(/^[a-z]{2}:/,'').replace(/-/g,' ')||product.categories||product.category||'Produkt',quantity:1,image:product.image_front_small_url||product.image_front_url||product.image_url||product.thumbnail||'',source};
+}
+async function tryJson(url){const res=await fetch(url);if(!res.ok)throw Error('HTTP '+res.status);return await res.json()}
+async function lookup(){
+ if(busy)return;const code=clean($('barcode').value).replace(/\s/g,'');
+ if(!/^\d{8,14}$/.test(code)){setStatus('Wpisz poprawny kod kreskowy (8–14 cyfr).','error');return}
+ busy=true;$('lookup').disabled=true;hideGoogleSearch();setStatus('Sprawdzam kilka baz produktów…');
+ try{
+  // 1) Open Food Facts (food and drinks)
+  try{const data=await tryJson('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json');if(data.status===1&&data.product){addProduct(productFromApi(data.product,code,'Open Food Facts'));return}}catch(e){}
+  // 2) Open Products Facts (non-food products, when available)
+  try{const data=await tryJson('https://world.openproductsfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json');if(data.status===1&&data.product){addProduct(productFromApi(data.product,code,'Open Products Facts'));return}}catch(e){}
+  // 3) Google Books (ISBN)
+  try{const data=await tryJson('https://www.googleapis.com/books/v1/volumes?q=isbn:'+encodeURIComponent(code));const book=data.items&&data.items[0]&&data.items[0].volumeInfo;if(book){addProduct({barcode:code,name:book.title||'Książka bez tytułu',brand:(book.authors||[]).join(', '),category:'Książka'+(book.publisher?' · '+book.publisher:''),quantity:1,image:book.imageLinks?.thumbnail||'',source:'Google Books'});return}}catch(e){}
+  setStatus('Nie znaleziono produktu w dostępnych bazach. Możesz wyszukać kod w Google albo wpisać dane ręcznie.','error');showGoogleSearch(code);
+ }catch(e){setStatus('Wyszukiwanie nie powiodło się. Sprawdź internet lub wyszukaj kod w Google.','error');showGoogleSearch(code)}
+ finally{busy=false;$('lookup').disabled=false}
+}
+$('lookup').addEventListener('click',lookup);$('barcode').addEventListener('input',hideGoogleSearch);$('barcode').addEventListener('keydown',e=>{if(e.key==='Enter')lookup()});$('addManual').addEventListener('click',()=>{const name=clean($('manualName').value);const code=clean($('barcode').value).replace(/\s/g,'');if(!name){setStatus('Wpisz nazwę produktu.','error');return}addProduct({barcode:code,name,brand:clean($('manualBrand').value),category:'Dodano ręcznie',quantity:Math.max(1,parseInt($('manualQty').value)||1),source:'manual'})});
 $('startScan').addEventListener('click',async()=>{
   if(scanner){try{await scanner.stop();scanner.clear()}catch(e){}scanner=null;$('reader').classList.remove('active');$('startScan').textContent='Skanuj aparatem';setStatus('Skaner zatrzymany.');return}
   if(!window.isSecureContext && location.hostname!=='localhost' && location.hostname!=='127.0.0.1'){setStatus('Aparat wymaga bezpiecznego połączenia HTTPS. Plik otwarty lokalnie lub w podglądzie nie uruchomi kamery. Opublikuj stronę na HTTPS i otwórz ją w Chrome.','error');return}
